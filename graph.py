@@ -1,163 +1,216 @@
+import networkx as nx
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import tkinter as tk
+from tkinter import messagebox
+import numpy as np
+
 class GraphApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Interactive Graph")
 
+        # 初期グラフ
         self.G = nx.Graph()
         self.G.add_node(1, pos=(0, 0), color='white')  # 初期ノード
+        self.selected_node = None
+        self.mode = "add_node"  # "add_node" または "insert_node_between"
 
+        # 操作履歴管理
         self.history = []
         self.redo_stack = []
-
-        # モード管理（ノード追加モード or ノード間に追加モード）
-        self.mode = "add_node"  # デフォルトはノード追加モード
-        self.selected_nodes = []  # 選択されたノードを管理
 
         # Tkinterレイアウトの設定
         self.canvas = tk.Canvas(root)
         self.canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
+        # グラフ描画用のmatplotlib Figure
         self.fig, self.ax = plt.subplots(figsize=(6, 6))
         self.canvas_plot = FigureCanvasTkAgg(self.fig, master=self.canvas)
         self.canvas_plot.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        # モード切替ボタン
-        self.add_node_mode_button = tk.Button(root, text="ノード追加モード", command=self.set_add_node_mode)
-        self.add_node_mode_button.pack(side=tk.LEFT)
-
-        self.add_between_mode_button = tk.Button(root, text="間にノードを追加", command=self.set_add_between_mode)
-        self.add_between_mode_button.pack(side=tk.LEFT)
-
+        # 操作ボタンの作成
         self.undo_button = tk.Button(root, text="元に戻す", command=self.undo)
         self.undo_button.pack(side=tk.LEFT)
 
         self.redo_button = tk.Button(root, text="やり直す", command=self.redo)
         self.redo_button.pack(side=tk.LEFT)
 
-        self.delete_button = tk.Button(root, text="削除", command=self.delete_all)
+        self.delete_button = tk.Button(root, text="削除", command=self.reset_graph)
         self.delete_button.pack(side=tk.LEFT)
 
+        self.add_node_mode_button = tk.Button(root, text="ノード追加モード", command=self.set_add_node_mode)
+        self.add_node_mode_button.pack(side=tk.LEFT)
+
+        self.insert_node_mode_button = tk.Button(root, text="間に挿入モード", command=self.set_insert_node_mode)
+        self.insert_node_mode_button.pack(side=tk.LEFT)
+
+        # クリックイベントのバインディング
         self.canvas_plot.mpl_connect("button_press_event", self.on_click)
 
         self.draw_graph()
 
+    def setup_menu(self):
+        """ メニューバーの設定 """
+        menubar = tk.Menu(self.root)
+
+        # 操作メニュー
+        operation_menu = tk.Menu(menubar, tearoff=0)
+        operation_menu.add_command(label="ノードを追加", command=self.add_node_with_branch, accelerator="Ctrl+N")
+        operation_menu.add_command(label="間にノードを追加", command=self.add_node_between, accelerator="Ctrl+B")
+        menubar.add_cascade(label="操作", menu=operation_menu)
+
+        # 編集メニュー
+        edit_menu = tk.Menu(menubar, tearoff=0)
+        edit_menu.add_command(label="削除", command=self.reset_graph, accelerator="Ctrl+D")
+        menubar.add_cascade(label="編集", menu=edit_menu)
+
+        # メニューバーを表示
+        self.root.config(menu=menubar)
+
+        # ショートカットキーの設定
+        self.root.bind("<Control-n>", lambda event: self.add_node_with_branch())
+        self.root.bind("<Control-b>", lambda event: self.add_node_between())
+        self.root.bind("<Control-d>", lambda event: self.reset_graph())
+
+    
     def set_add_node_mode(self):
-        """ ノードを追加するモードに変更 """
+        """ ノード追加モードに切り替え """
         self.mode = "add_node"
-        self.selected_nodes.clear()
+        self.selected_node = None
 
-    def set_add_between_mode(self):
-        """ ノードを間に追加するモードに変更 """
-        self.mode = "add_between"
-        self.selected_nodes.clear()
+    def set_insert_node_mode(self):
+        """ ノード間挿入モードに切り替え """
+        self.mode = "insert_node_between"
+        self.selected_node = None
 
-    def on_click(self, event):
-        if event.xdata is None or event.ydata is None:
-            return
-        x, y = event.xdata, event.ydata
+    def draw_graph(self):
+        """ グラフを描画 """
         pos = nx.get_node_attributes(self.G, 'pos')
+        colors = [self.G.nodes[node]['color'] for node in self.G.nodes]
 
-        # クリック位置に最も近いノードを選択
-        nearest_node = min(self.G.nodes, key=lambda n: np.linalg.norm(np.array(pos[n]) - np.array([x, y])))
+        # ノードの描画
+        nx.draw(self.G, pos, with_labels=False, node_color=colors, node_size=500, font_size=16)
 
-        if self.mode == "add_node":
-            self.select_node(nearest_node)
-        elif self.mode == "add_between":
-            self.select_node_for_between(nearest_node)
+        # ラベルをノードに応じて色分けして表示
+        labels = {node: node for node in self.G.nodes}
+        label_colors = {node: 'white' if self.G.nodes[node]['color'] == 'black' else 'black' for node in self.G.nodes}
+        nx.draw_networkx_labels(self.G, pos, labels=labels, font_color=label_colors)
 
-    def select_node(self, node):
-        """ ノードを選択し、新規ノードを追加 """
-        if node in self.selected_nodes:
-            messagebox.showwarning("選択エラー", "このノードはすでに選択されています。")
-            return
+        # 描画の更新
+        self.canvas.draw()
 
-        self.selected_nodes.append(node)
-        self.G.nodes[node]['color'] = 'black' if self.G.nodes[node]['color'] == 'white' else 'white'
 
-        if len(self.selected_nodes) == 1:
-            # 1つのノードが選択された状態で新しいノードを追加
-            self.add_node_at_selected()
+    def add_node_with_branch(self, selected_node):
+        pos = nx.get_node_attributes(self.G, 'pos')
+        x, y = pos[selected_node]
 
+        # 新しいノードの位置を計算
+        angle = np.random.uniform(0, 2 * np.pi)
+        r = 1
+        new_x = x + r * np.cos(angle)
+        new_y = y + r * np.sin(angle)
+
+        new_node = len(self.G.nodes) + 1
+        self.G.add_node(new_node, pos=(new_x, new_y), color='white')
+        self.G.add_edge(selected_node, new_node)
+
+        # 選択されたノードの色を反転
+        self.flip_color(selected_node)
+
+        # 新しいノードに隣接するノードの色を反転（ただし、selected_node は除外）
+        self.flip_adjacent_node_colors(new_node, exclude_node=selected_node)
+
+        # グラフを再描画
         self.draw_graph()
 
-    def select_node_for_between(self, node):
-        """ ノード間にノードを追加するために2つのノードを選択 """
-        if node in self.selected_nodes:
-            messagebox.showwarning("選択エラー", "このノードはすでに選択されています。")
-            return
 
-        self.selected_nodes.append(node)
-        self.G.nodes[node]['color'] = 'black' if self.G.nodes[node]['color'] == 'white' else 'white'
-
-        if len(self.selected_nodes) == 2:
-            # 2つのノードが選択されたので、その間にノードを追加
-            self.add_node_between_selected()
-
-        self.draw_graph()
-
-    def add_node_at_selected(self):
-        """ 選択されたノードから新しいノードを追加 """
-        if len(self.selected_nodes) == 1:
-            selected_node = self.selected_nodes[0]
-            pos = nx.get_node_attributes(self.G, 'pos')
-            x, y = pos[selected_node]
-            new_x, new_y = x + 0.1, y + 0.1  # 仮の位置に新ノードを追加
-
-            new_node = len(self.G.nodes) + 1
-            self.G.add_node(new_node, pos=(new_x, new_y), color='white')
-            self.G.add_edge(selected_node, new_node)
-
-            # 選択されたノードの色を反転
-            self.G.nodes[selected_node]['color'] = 'black' if self.G.nodes[selected_node]['color'] == 'white' else 'white'
-            self.selected_nodes.clear()
-
-    def add_node_between_selected(self):
-        """ 選択された2つのノードの間に新しいノードを追加 """
-        node1, node2 = self.selected_nodes
+    def insert_node_between(self, node1, node2):
+        """ エッジ間にノードを挿入 """
         if self.G.has_edge(node1, node2):
-            edge = (node1, node2)
-            mid_x = (self.G.nodes[node1]['pos'][0] + self.G.nodes[node2]['pos'][0]) / 2
-            mid_y = (self.G.nodes[node1]['pos'][1] + self.G.nodes[node2]['pos'][1]) / 2
+            pos1 = self.G.nodes[node1]['pos']
+            pos2 = self.G.nodes[node2]['pos']
+            mid_pos = [(p1 + p2) / 2 for p1, p2 in zip(pos1, pos2)]
 
-            # エッジ間にノードが存在するか確認
-            if any(self.G.has_edge(node1, n) and self.G.has_edge(n, node2) for n in self.G.nodes if n not in [node1, node2]):
-                messagebox.showwarning("操作エラー", "このエッジの間にはすでにノードがあります。")
-                self.selected_nodes.clear()
-                return
-
-            new_node = len(self.G.nodes) + 1
-            self.G.add_node(new_node, pos=(mid_x, mid_y), color='white')
+            # 既存のエッジを削除して新しいノードを追加
             self.G.remove_edge(node1, node2)
+            new_node = len(self.G.nodes) + 1
+            self.G.add_node(new_node, pos=mid_pos, color='white')
             self.G.add_edge(node1, new_node)
             self.G.add_edge(new_node, node2)
 
             # 両端のノードの色を反転
-            self.G.nodes[node1]['color'] = 'black' if self.G.nodes[node1]['color'] == 'white' else 'white'
-            self.G.nodes[node2]['color'] = 'black' if self.G.nodes[node2]['color'] == 'white' else 'white'
-            self.selected_nodes.clear()
+            self.flip_color(node1)
+            self.flip_color(node2)
 
-    # 既存のメソッドは変更不要
-    def draw_graph(self):
-        self.ax.clear()
-        pos = nx.get_node_attributes(self.G, 'pos')
-        node_colors = [self.G.nodes[n]['color'] for n in self.G.nodes()]
-        nx.draw(self.G, pos, ax=self.ax, with_labels=True, node_color=node_colors,
-                node_size=800, font_color='black', font_weight='bold', edgecolors='black')
-        self.canvas_plot.draw()
+    def flip_color(self, node):
+        """ ノードの色を反転 """
+        current_color = self.G.nodes[node]['color']
+        print(f"Node {node} current color: {current_color}")  # デバッグ用
+        new_color = 'black' if current_color == 'white' else 'white'
+        self.G.nodes[node]['color'] = new_color
+        print(f"Node {node} new color: {new_color}")  # デバッグ用
 
-    def delete_all(self):
+    def flip_adjacent_node_colors(self, node, exclude_node=None):
+        """ 隣接するノードの色を反転、ただし exclude_node は除外 """
+        for neighbor in self.G.neighbors(node):
+            if neighbor != exclude_node:  # exclude_node（selected_node）があれば反転をスキップ
+                self.flip_color(neighbor)
+
+    def on_click(self, event):
+        """ マウスクリックイベント処理 """
+        if event.xdata is None or event.ydata is None:
+            return  # クリックが無効な領域だった場合
+
+        if self.mode == "add_node":
+            if self.selected_node is None:  # ノードを選択
+                self.selected_node = self.find_nearest_node(event.xdata, event.ydata)
+            else:  # 選択されたノードから新しいノードを追加
+                self.add_node_with_branch(self.selected_node)
+                self.selected_node = None
+
+        elif self.mode == "insert_node_between":
+            if self.selected_node is None:  # 最初のノードを選択
+                self.selected_node = self.find_nearest_node(event.xdata, event.ydata)
+            else:  # 2つ目のノードを選択して、その間にノードを挿入
+                second_node = self.find_nearest_node(event.xdata, event.ydata)
+                if not self.G.has_edge(self.selected_node, second_node):
+                    messagebox.showerror("エラー", "選択したノードの間にエッジが存在しません")
+                else:
+                    self.insert_node_between(self.selected_node, second_node)
+                self.selected_node = None
+
         self.history.append(self.G.copy())
         self.redo_stack.clear()
+
+        self.draw_graph()
+
+    def find_nearest_node(self, x, y):
+        """ 最も近いノードを見つける """
+        pos = nx.get_node_attributes(self.G, 'pos')
+        nearest_node = min(self.G.nodes, key=lambda n: np.linalg.norm(np.array(pos[n]) - np.array([x, y])))
+        return nearest_node
+
+    def reset_graph(self):
+        """ すべてのノードを削除し、白いノードを一つ配置して初期化 """
+        # グラフの全ノードとエッジを削除
         self.G.clear()
+
+        # 白いノードを一つ配置
+        self.G.add_node(1, pos=(0, 0), color='white')
+
+        # グラフを再描画
         self.draw_graph()
 
     def undo(self):
+        """ 元に戻す """
         if self.history:
             self.redo_stack.append(self.G.copy())
             self.G = self.history.pop()
             self.draw_graph()
 
     def redo(self):
+        """ やり直す """
         if self.redo_stack:
             self.history.append(self.G.copy())
             self.G = self.redo_stack.pop()
