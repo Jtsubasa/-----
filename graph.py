@@ -45,6 +45,8 @@ class GraphApp:
         self.insert_node_mode_button = tk.Button(root, text="間に挿入モード", command=self.set_insert_node_mode)
         self.insert_node_mode_button.pack(side=tk.LEFT)
 
+        self.setup_menu()
+
         # クリックイベントのバインディング
         self.canvas_plot.mpl_connect("button_press_event", self.on_click)
 
@@ -57,7 +59,7 @@ class GraphApp:
         # 操作メニュー
         operation_menu = tk.Menu(menubar, tearoff=0)
         operation_menu.add_command(label="ノードを追加", command=self.add_node_with_branch, accelerator="Ctrl+N")
-        operation_menu.add_command(label="間にノードを追加", command=self.add_node_between, accelerator="Ctrl+B")
+        operation_menu.add_command(label="間にノードを追加", command=self.insert_node_between, accelerator="Ctrl+B")
         menubar.add_cascade(label="操作", menu=operation_menu)
 
         # 編集メニュー
@@ -70,7 +72,7 @@ class GraphApp:
 
         # ショートカットキーの設定
         self.root.bind("<Control-n>", lambda event: self.add_node_with_branch())
-        self.root.bind("<Control-b>", lambda event: self.add_node_between())
+        self.root.bind("<Control-b>", lambda event: self.insert_node_between())
         self.root.bind("<Control-d>", lambda event: self.reset_graph())
 
     
@@ -98,7 +100,7 @@ class GraphApp:
         nx.draw_networkx_labels(self.G, pos, labels=labels, font_color=label_colors)
 
         # 描画の更新
-        self.canvas.draw()
+        self.canvas_plot.draw()
 
 
     def add_node_with_branch(self, selected_node):
