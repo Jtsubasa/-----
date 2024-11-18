@@ -8,7 +8,7 @@ import numpy as np
 class GraphApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("インタラクティブグラフ")
+        self.root.title("1998年東京大学後期理系数学第3問のグラフ理論")
 
         # 初期グラフを作成（ノード1を白で追加）
         self.G = nx.Graph()
@@ -195,11 +195,21 @@ class GraphApp:
         # グラフを再描画
         self.draw_graph()
 
-    def find_nearest_node(self, x, y):
-        """ クリック位置に最も近いノードを見つける """
+    def find_nearest_node(self, x, y, threshold=0.05):
+        """ マウス位置に最も近いノードを見つけ、一定の距離以内なら返す """
         pos = nx.get_node_attributes(self.G, 'pos')
+    
+        # ノードとマウスの距離を計算し、最も近いノードを見つける
         nearest_node = min(self.G.nodes, key=lambda n: np.linalg.norm(np.array(pos[n]) - np.array([x, y])))
-        return nearest_node
+    
+        # 最近接ノードとの距離を計算
+        distance = np.linalg.norm(np.array(pos[nearest_node]) - np.array([x, y]))
+    
+        # 閾値よりも近い場合のみノードを返す。それ以外は None を返す
+        if distance <= threshold:
+            return nearest_node
+        else:
+            return None
 
     def reset_graph(self):
         """ グラフを初期状態にリセット """
