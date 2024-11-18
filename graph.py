@@ -29,22 +29,6 @@ class GraphApp:
         self.canvas_plot = FigureCanvasTkAgg(self.fig, master=self.canvas)
         self.canvas_plot.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        # 操作ボタンの作成
-        self.undo_button = tk.Button(root, text="元に戻す", command=self.undo)
-        self.undo_button.pack(side=tk.LEFT)
-
-        self.redo_button = tk.Button(root, text="やり直す", command=self.redo)
-        self.redo_button.pack(side=tk.LEFT)
-
-        self.delete_button = tk.Button(root, text="削除", command=self.reset_graph)
-        self.delete_button.pack(side=tk.LEFT)
-
-        self.add_node_mode_button = tk.Button(root, text="ノード追加モード", command=self.set_add_node_mode)
-        self.add_node_mode_button.pack(side=tk.LEFT)
-
-        self.insert_node_mode_button = tk.Button(root, text="間に挿入モード", command=self.set_insert_node_mode)
-        self.insert_node_mode_button.pack(side=tk.LEFT)
-
         self.setup_menu()
 
         # クリックイベントのバインディング
@@ -65,6 +49,8 @@ class GraphApp:
         # 編集メニュー
         edit_menu = tk.Menu(menubar, tearoff=0)
         edit_menu.add_command(label="削除", command=self.reset_graph, accelerator="Ctrl+D")
+        edit_menu.add_command(label="Undo", command=self.undo, accelerator="Ctrl+Z")
+        edit_menu.add_command(label="Redo", command=self.redo, accelerator="Ctrl+Y")
         menubar.add_cascade(label="編集", menu=edit_menu)
 
         # メニューバーを表示
@@ -74,17 +60,8 @@ class GraphApp:
         self.root.bind("<Control-n>", lambda event: self.add_node_with_branch())
         self.root.bind("<Control-b>", lambda event: self.insert_node_between())
         self.root.bind("<Control-d>", lambda event: self.reset_graph())
-
-    
-    def set_add_node_mode(self):
-        """ ノード追加モードに切り替え """
-        self.mode = "add_node"
-        self.selected_node = None
-
-    def set_insert_node_mode(self):
-        """ ノード間挿入モードに切り替え """
-        self.mode = "insert_node_between"
-        self.selected_node = None
+        self.root.bind("<Control-z>", lambda event: self.undo())
+        self.root.bind("<Control-y>", lambda event: self.redo())
 
     def draw_graph(self):
         """ グラフを描画 """
@@ -92,7 +69,8 @@ class GraphApp:
         colors = [self.G.nodes[node]['color'] for node in self.G.nodes]
 
         # ノードの描画
-        nx.draw(self.G, pos, with_labels=False, node_color=colors, node_size=500, font_size=16)
+        edgecolors = ['black' if color == 'white' else None for color in colors]
+        nx.draw(self.G, pos, with_labels=False, node_color=colors, edgecolors=edgecolors, node_size=500, font_size=16)
 
         # ラベルをノードに応じて色分けして表示
         labels = {node: node for node in self.G.nodes}
@@ -101,7 +79,6 @@ class GraphApp:
 
         # 描画の更新
         self.canvas_plot.draw()
-
 
     def add_node_with_branch(self, selected_node):
         pos = nx.get_node_attributes(self.G, 'pos')
@@ -126,7 +103,6 @@ class GraphApp:
         # グラフを再描画
         self.draw_graph()
 
-
     def insert_node_between(self, node1, node2):
         """ エッジ間にノードを挿入 """
         if self.G.has_edge(node1, node2):
@@ -145,13 +121,14 @@ class GraphApp:
             self.flip_color(node1)
             self.flip_color(node2)
 
+            # グラフを再描画
+            self.draw_graph()
+
     def flip_color(self, node):
         """ ノードの色を反転 """
         current_color = self.G.nodes[node]['color']
-        print(f"Node {node} current color: {current_color}")  # デバッグ用
         new_color = 'black' if current_color == 'white' else 'white'
         self.G.nodes[node]['color'] = new_color
-        print(f"Node {node} new color: {new_color}")  # デバッグ用
 
     def flip_adjacent_node_colors(self, node, exclude_node=None):
         """ 隣接するノードの色を反転、ただし exclude_node は除外 """
@@ -182,6 +159,7 @@ class GraphApp:
                     self.insert_node_between(self.selected_node, second_node)
                 self.selected_node = None
 
+        # 操作履歴に追加
         self.history.append(self.G.copy())
         self.redo_stack.clear()
 
@@ -217,6 +195,7 @@ class GraphApp:
             self.history.append(self.G.copy())
             self.G = self.redo_stack.pop()
             self.draw_graph()
+
 
 # Tkinterアプリケーションの実行
 root = tk.Tk()
